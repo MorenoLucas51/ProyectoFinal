@@ -51,7 +51,7 @@ namespace ProyectoFinal.Controllers
         {
             var laboratorio =await _context.Laboratorios.FindAsync(dto.LaboratorioId);
             if (laboratorio == null)
-                return BadRequest("Ellaboratorio no existe");
+                return BadRequest("El laboratorio no existe");
 
             var medicamento = _mapper.Map<Medicamento>(dto);
 
@@ -60,8 +60,16 @@ namespace ProyectoFinal.Controllers
                 .ToListAsync();
 
             _context.Medicamentos.Add(medicamento);
-            await _context.SaveChangesAsync();  
-            return Ok("Medicamento creado correctamente");
+            await _context.SaveChangesAsync();
+
+            var dtoFinal = _mapper.Map<MedicamentoDto>(medicamento);
+
+            // RETORNAR: 201 Created + Location + objeto creado
+            return CreatedAtAction(
+                nameof(GetMedicamento),
+                new { id = medicamento.Id },
+                dtoFinal
+            );
 
         }
 
@@ -69,23 +77,38 @@ namespace ProyectoFinal.Controllers
         public async Task<ActionResult> ActualizarMedicamento(int id, MedicamentoCreateDto dto)
         {
             var medicamento = await _context.Medicamentos
-                .Include(m => m.Activos)
                 .FirstOrDefaultAsync(m => m.Id == id);
 
-            if (medicamento == null) return NotFound();
+            if (medicamento == null)
+                return NotFound();
 
-            
+            // Actualizar propiedades simples
             medicamento.NombreComercial = dto.NombreComercial;
             medicamento.Precio = dto.Precio;
             medicamento.LaboratorioId = dto.LaboratorioId;
 
-            
-            medicamento.Activos = await _context.Activos
+            // CARGAR los activos nuevos desde la base solo por su ID
+            var nuevosActivos = await _context.Activos
                 .Where(a => dto.ActivosIds.Contains(a.Id))
                 .ToListAsync();
 
+            // Cargar navegación antes de modificarla (sin JOIN gigante)
+            await _context.Entry(medicamento)
+                .Collection(m => m.Activos)
+                .LoadAsync();
+
+            // LIMPIAR relación N-N
+            medicamento.Activos.Clear();
+
+            // AGREGAR los nuevos activos
+            foreach (var activo in nuevosActivos)
+                medicamento.Activos.Add(activo);
+
             await _context.SaveChangesAsync();
-            return Ok("Medicamento actualizado");
+
+            var dtoFinal = _mapper.Map<MedicamentoDto>(medicamento);
+
+            return Ok(dtoFinal);
         }
 
 
